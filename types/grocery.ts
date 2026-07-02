@@ -37,7 +37,7 @@ export interface GroceryItem {
   status: 'pending' | 'bought' | 'unavailable'
   priority?: 'Low' | 'Medium' | 'High'
   notes?: string
-  currentStock?: number
+  currentStock: number
   createdByUserId: number
   createdBy: 'husband' | 'wife'
 }
