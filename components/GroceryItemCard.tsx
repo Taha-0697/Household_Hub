@@ -17,7 +17,7 @@ export default function GroceryItemCard({ item, onUpdateStatus }: GroceryItemCar
   const [editQty, setEditQty] = useState<number | ''>(item.quantityNeeded);
   const [editStock, setEditStock] = useState<number | ''>(item.currentStock);
 
-  const getPriorityBadge = (p: string) => {
+const getPriorityBadge = (p?: 'Low' | 'Medium' | 'High') => {
     if (p === 'High') return 'bg-red-100 text-red-700 border-red-200';
     if (p === 'Medium') return 'bg-amber-100 text-amber-700 border-amber-200';
     return 'bg-gray-100 text-gray-600 border-gray-200';
@@ -134,7 +134,7 @@ export default function GroceryItemCard({ item, onUpdateStatus }: GroceryItemCar
               <label className="text-[9px] font-bold text-gray-400 uppercase block mb-0.5">Priority</label>
               <select 
                 value={editPriority} 
-                onChange={(e) => setEditPriority(e.target.value as any)}
+                onChange={(e) => setEditPriority(e.target.value as 'Low' | 'Medium' | 'High')}
                 className="border p-1.5 rounded bg-white text-xs w-full h-[30px]"
               >
                 {PRIORITY_LEVELS.map(p => <option key={p} value={p}>{p}</option>)}
