@@ -49,10 +49,10 @@ export interface AppNotification {
 
 // API Network Schema Definitions
 export interface PostRequestBody {
+  id?: number
   action: 'add' | 'update' | 'clearNotifications'
   userId: number
   userRole: 'husband' | 'wife'
-  id?: number
   name?: string
   currentStock?: number
   quantityNeeded?: number

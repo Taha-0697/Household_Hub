@@ -2,7 +2,13 @@ import { NextResponse } from 'next/server'
 import { neon } from '@neondatabase/serverless'
 import { AppNotification, GroceryItem, PostRequestBody } from '@/types/grocery'
 
-const sql = neon(process.env.DATABASE_URL || '')
+const databaseUrl = process.env.DATABASE_URL
+
+if (!databaseUrl) {
+  throw new Error('Missing DATABASE_URL environment variable')
+}
+
+const sql = neon(databaseUrl)
 
 /**
  * Reusable notification helper
@@ -12,12 +18,12 @@ async function notifyHousehold (
   senderId: number,
   message: string
 ) {
-  const roomiesRows = await sql`
-    SELECT user_id 
-    FROM household_members 
-    WHERE household_id = ${householdId} 
+  const roomiesRows = (await sql`
+    SELECT user_id
+    FROM household_members
+    WHERE household_id = ${householdId}
       AND user_id != ${senderId}
-  `
+  `) as { user_id: number }[]
 
   for (const roomie of roomiesRows) {
     await sql`
@@ -27,33 +33,37 @@ async function notifyHousehold (
   }
 }
 
+/**
+ * GET ITEMS + NOTIFICATIONS
+ */
 export async function GET (request: Request) {
   const { searchParams } = new URL(request.url)
   const userIdStr = searchParams.get('userId')
 
   if (!userIdStr) {
-    return NextResponse.json(
-      { error: 'Missing authorized user identifier' },
-      { status: 400 }
-    )
+    return NextResponse.json({ error: 'Missing userId' }, { status: 400 })
   }
 
-  const userId = parseInt(userIdStr, 10)
+  const userId = Number(userIdStr)
+
+  if (Number.isNaN(userId)) {
+    return NextResponse.json({ error: 'Invalid userId' }, { status: 400 })
+  }
 
   try {
-    const memberRows = await sql`
-      SELECT household_id 
-      FROM household_members 
+    const memberRows = (await sql`
+      SELECT household_id
+      FROM household_members
       WHERE user_id = ${userId}
-    `
+    `) as { household_id: number }[]
 
     if (memberRows.length === 0) {
       return NextResponse.json({ items: [], notifications: [] })
     }
 
-    const householdId = memberRows[0].household_id as number
+    const householdId = memberRows[0].household_id
 
-    const dbItems = await sql`
+    const dbItems = (await sql`
       SELECT
         id,
         name,
@@ -68,30 +78,39 @@ export async function GET (request: Request) {
       FROM grocery_items
       WHERE household_id = ${householdId}
       ORDER BY id DESC
-    `
+    `) as GroceryItem[]
 
-    const dbNotifications = await sql`
+    const dbNotifications = (await sql`
       SELECT id, message
       FROM app_notifications
       WHERE target_role = ${userId}
       ORDER BY id DESC
-    `
+    `) as AppNotification[]
 
     return NextResponse.json({
-      items: dbItems as GroceryItem[],
-      notifications: dbNotifications as AppNotification[]
+      items: dbItems,
+      notifications: dbNotifications
     })
-  } catch (dbError) {
-    console.error('Neon DB Fetch Error:', dbError)
+  } catch (err) {
+    console.error('GET error:', err)
     return NextResponse.json(
-      { error: 'Database execution failure' },
+      { error: 'Database fetch failure' },
       { status: 500 }
     )
   }
 }
 
+/**
+ * POST ACTIONS
+ */
 export async function POST (request: Request) {
-  const body: PostRequestBody = await request.json()
+  let body: PostRequestBody
+
+  try {
+    body = (await request.json()) as PostRequestBody
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
 
   const {
     action,
@@ -103,31 +122,45 @@ export async function POST (request: Request) {
     unit,
     priority,
     notes,
-    status // ✅ FIXED (was missing before)
+    status
   } = body
 
+  if (!action || !userId || !userRole) {
+    return NextResponse.json(
+      { error: 'Missing required fields' },
+      { status: 400 }
+    )
+  }
+
   try {
-    const memberRows = await sql`
-      SELECT household_id 
-      FROM household_members 
+    const memberRows = (await sql`
+      SELECT household_id
+      FROM household_members
       WHERE user_id = ${userId}
-    `
+    `) as { household_id: number }[]
 
     if (memberRows.length === 0) {
       return NextResponse.json(
-        { error: 'User does not belong to any household' },
+        { error: 'User not in household' },
         { status: 403 }
       )
     }
 
-    const householdId = memberRows[0].household_id as number
+    const householdId = memberRows[0].household_id
     const emoji = userRole === 'wife' ? '👩 Wife' : '👨 Husband'
 
     /**
      * ADD ITEM
      */
-    if (action === 'add' && name && quantityNeeded && unit) {
-      const insertedItemRows = await sql`
+    if (action === 'add') {
+      if (!name || !quantityNeeded || !unit) {
+        return NextResponse.json(
+          { error: 'Missing item fields' },
+          { status: 400 }
+        )
+      }
+
+      const inserted = (await sql`
         INSERT INTO grocery_items (
           name,
           quantity_needed,
@@ -148,30 +181,34 @@ export async function POST (request: Request) {
           ${userId},
           ${userRole},
           ${householdId},
-          ${priority},
-          ${notes},
-          ${currentStock}
+          ${priority ?? null},
+          ${notes ?? null},
+          ${currentStock ?? 0}
         )
         RETURNING *
-      `
+      `) as GroceryItem[]
 
       await notifyHousehold(
         householdId,
         userId,
-        `${emoji} added "${name}" (${quantityNeeded} ${unit}) to the list!`
+        `${emoji} added "${name}" (${quantityNeeded} ${unit})`
       )
 
       return NextResponse.json({
         success: true,
-        item: insertedItemRows[0] as GroceryItem
+        item: inserted[0]
       })
     }
 
     /**
-     * UPDATE ITEM (includes bought / not bought)
+     * UPDATE ITEM
      */
-    if (action === 'update' && body.id) {
-      const updatedRows = await sql`
+    if (action === 'update') {
+      if (!body.id) {
+        return NextResponse.json({ error: 'Missing item id' }, { status: 400 })
+      }
+
+      const updated = (await sql`
         UPDATE grocery_items
         SET
           name = COALESCE(${name}, name),
@@ -184,19 +221,19 @@ export async function POST (request: Request) {
         WHERE id = ${body.id}
           AND household_id = ${householdId}
         RETURNING *
-      `
+      `) as GroceryItem[]
 
-      const updated = updatedRows[0]
+      const item = updated[0]
 
-      if (updated) {
-        let message = `${emoji} updated "${updated.name}"`
+      if (item) {
+        let message = `${emoji} updated "${item.name}"`
 
         if (status === 'bought') {
-          message = `${emoji} marked "${updated.name}" as BOUGHT ✅`
+          message = `${emoji} marked "${item.name}" as BOUGHT ✅`
         }
 
         if (status === 'unavailable') {
-          message = `${emoji} marked "${updated.name}" as NOT BOUGHT ❌`
+          message = `${emoji} marked "${item.name}" as NOT AVAILABLE ❌`
         }
 
         await notifyHousehold(householdId, userId, message)
@@ -204,7 +241,7 @@ export async function POST (request: Request) {
 
       return NextResponse.json({
         success: true,
-        item: updated
+        item
       })
     }
 
@@ -219,16 +256,13 @@ export async function POST (request: Request) {
 
       return NextResponse.json({ success: true })
     }
-  } catch (dbError) {
-    console.error('Neon DB Write Error:', dbError)
+
+    return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
+  } catch (err) {
+    console.error('POST error:', err)
     return NextResponse.json(
       { error: 'Database mutation failure' },
       { status: 500 }
     )
   }
-
-  return NextResponse.json(
-    { error: 'Invalid action or payload' },
-    { status: 400 }
-  )
 }
