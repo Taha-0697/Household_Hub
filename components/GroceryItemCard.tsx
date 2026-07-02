@@ -17,6 +17,9 @@ export default function GroceryItemCard({ item, onUpdateStatus }: GroceryItemCar
   const [editQty, setEditQty] = useState<number | ''>(item.quantityNeeded);
   const [editStock, setEditStock] = useState<number | ''>(item.currentStock);
 
+const priority = item.priority ?? 'Low'
+
+
 const getPriorityBadge = (p?: 'Low' | 'Medium' | 'High') => {
     if (p === 'High') return 'bg-red-100 text-red-700 border-red-200';
     if (p === 'Medium') return 'bg-amber-100 text-amber-700 border-amber-200';
@@ -41,8 +44,8 @@ const getPriorityBadge = (p?: 'Low' | 'Medium' | 'High') => {
         <div className="flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-bold text-gray-900 text-base">{item.name}</span>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${getPriorityBadge(item.priority)}`}>
-              {item.priority}
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${getPriorityBadge(priority)}`}>
+              {priority}
             </span>
           </div>
           <p className="text-xs text-gray-500 mt-1">
