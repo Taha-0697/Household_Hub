@@ -54,12 +54,12 @@ export default function Home () {
             ...fields
           })
         })
-        // fetchData()
+        fetchData()
       } catch (err) {
         console.error('Update operation mutation failed:', err)
       }
     },
-    [user]
+    [user, fetchData]
   )
 
   const clearNotifications = useCallback(async () => {

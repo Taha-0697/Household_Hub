@@ -4,6 +4,29 @@ import { AppNotification, GroceryItem, PostRequestBody } from '@/types/grocery'
 
 const sql = neon(process.env.DATABASE_URL || '')
 
+/**
+ * Reusable notification helper
+ */
+async function notifyHousehold (
+  householdId: number,
+  senderId: number,
+  message: string
+) {
+  const roomiesRows = await sql`
+    SELECT user_id 
+    FROM household_members 
+    WHERE household_id = ${householdId} 
+      AND user_id != ${senderId}
+  `
+
+  for (const roomie of roomiesRows) {
+    await sql`
+      INSERT INTO app_notifications (target_role, message)
+      VALUES (${roomie.user_id}, ${message})
+    `
+  }
+}
+
 export async function GET (request: Request) {
   const { searchParams } = new URL(request.url)
   const userIdStr = searchParams.get('userId')
@@ -14,12 +37,14 @@ export async function GET (request: Request) {
       { status: 400 }
     )
   }
+
   const userId = parseInt(userIdStr, 10)
 
   try {
-    // -- Find the unique household ID mapped to this user session
     const memberRows = await sql`
-      SELECT household_id FROM household_members WHERE user_id = ${userId}
+      SELECT household_id 
+      FROM household_members 
+      WHERE user_id = ${userId}
     `
 
     if (memberRows.length === 0) {
@@ -27,26 +52,27 @@ export async function GET (request: Request) {
     }
 
     const householdId = memberRows[0].household_id as number
+
     const dbItems = await sql`
-    SELECT
-      id,
-      name,
-      current_stock AS "currentStock",
-      quantity_needed AS "quantityNeeded",
-      unit,
-      status,
-      priority,
-      notes,
-      created_by_user_id AS "createdByUserId",
-      created_by_role AS "createdBy"
-    FROM grocery_items
-    WHERE household_id = ${householdId}
-    ORDER BY id DESC
-  `
-    // -- Fetch active unread system alerts targeting this exact user ID
+      SELECT
+        id,
+        name,
+        current_stock AS "currentStock",
+        quantity_needed AS "quantityNeeded",
+        unit,
+        status,
+        priority,
+        notes,
+        created_by_user_id AS "createdByUserId",
+        created_by_role AS "createdBy"
+      FROM grocery_items
+      WHERE household_id = ${householdId}
+      ORDER BY id DESC
+    `
+
     const dbNotifications = await sql`
-      SELECT id, message 
-      FROM app_notifications 
+      SELECT id, message
+      FROM app_notifications
       WHERE target_role = ${userId}
       ORDER BY id DESC
     `
@@ -66,6 +92,7 @@ export async function GET (request: Request) {
 
 export async function POST (request: Request) {
   const body: PostRequestBody = await request.json()
+
   const {
     action,
     userId,
@@ -75,13 +102,15 @@ export async function POST (request: Request) {
     quantityNeeded,
     unit,
     priority,
-    notes
+    notes,
+    status // ✅ FIXED (was missing before)
   } = body
 
   try {
-    // -- Fetch the household mapping for the current user
     const memberRows = await sql`
-      SELECT household_id FROM household_members WHERE user_id = ${userId}
+      SELECT household_id 
+      FROM household_members 
+      WHERE user_id = ${userId}
     `
 
     if (memberRows.length === 0) {
@@ -92,35 +121,45 @@ export async function POST (request: Request) {
     }
 
     const householdId = memberRows[0].household_id as number
+    const emoji = userRole === 'wife' ? '👩 Wife' : '👨 Husband'
 
-    // -- ACTION: ADD NEW GROCERY ITEM
+    /**
+     * ADD ITEM
+     */
     if (action === 'add' && name && quantityNeeded && unit) {
-      // -- 1. Store item tagged directly with the target household ID context
       const insertedItemRows = await sql`
-        INSERT INTO grocery_items (name, quantity_needed, unit, status, created_by_user_id, created_by_role, household_id, priority, notes, current_stock)
-        VALUES (${name}, ${quantityNeeded}, ${unit}, 'pending', ${userId}, ${userRole}, ${householdId}, ${priority}, ${notes}, ${currentStock})
-        RETURNING id, name, quantity_needed AS "quantityNeeded", unit, status, created_by_user_id AS "createdByUserId", created_by_role AS "createdBy", priority, notes, current_stock AS "currentStock"
+        INSERT INTO grocery_items (
+          name,
+          quantity_needed,
+          unit,
+          status,
+          created_by_user_id,
+          created_by_role,
+          household_id,
+          priority,
+          notes,
+          current_stock
+        )
+        VALUES (
+          ${name},
+          ${quantityNeeded},
+          ${unit},
+          'pending',
+          ${userId},
+          ${userRole},
+          ${householdId},
+          ${priority},
+          ${notes},
+          ${currentStock}
+        )
+        RETURNING *
       `
 
-      // -- 2. Find all OTHER members in this same house to send them the alert
-      const roomiesRows = await sql`
-        SELECT user_id FROM household_members 
-        WHERE household_id = ${householdId} AND user_id != ${userId}
-      `
-
-      if (roomiesRows.length > 0) {
-        const emoji = userRole === 'wife' ? '👩 Wife' : '👨 Husband'
-        const notificationMessage = `${emoji} added "${name}" (${quantityNeeded} ${unit}) to the list!`
-
-        // -- Create a notification for each roommate/spouse found
-        for (const roomie of roomiesRows) {
-          const targetRoomieId = roomie.user_id as number
-          await sql`
-            INSERT INTO app_notifications (target_role, message)
-            VALUES (${targetRoomieId}, ${notificationMessage})
-          `
-        }
-      }
+      await notifyHousehold(
+        householdId,
+        userId,
+        `${emoji} added "${name}" (${quantityNeeded} ${unit}) to the list!`
+      )
 
       return NextResponse.json({
         success: true,
@@ -128,12 +167,56 @@ export async function POST (request: Request) {
       })
     }
 
-    // -- ACTION: CLEAR NOTIFICATIONS FOR CURRENT USER ONLY
+    /**
+     * UPDATE ITEM (includes bought / not bought)
+     */
+    if (action === 'update' && body.id) {
+      const updatedRows = await sql`
+        UPDATE grocery_items
+        SET
+          name = COALESCE(${name}, name),
+          quantity_needed = COALESCE(${quantityNeeded}, quantity_needed),
+          unit = COALESCE(${unit}, unit),
+          status = COALESCE(${status}, status),
+          priority = COALESCE(${priority}, priority),
+          notes = COALESCE(${notes}, notes),
+          current_stock = COALESCE(${currentStock}, current_stock)
+        WHERE id = ${body.id}
+          AND household_id = ${householdId}
+        RETURNING *
+      `
+
+      const updated = updatedRows[0]
+
+      if (updated) {
+        let message = `${emoji} updated "${updated.name}"`
+
+        if (status === 'bought') {
+          message = `${emoji} marked "${updated.name}" as BOUGHT ✅`
+        }
+
+        if (status === 'unavailable') {
+          message = `${emoji} marked "${updated.name}" as NOT BOUGHT ❌`
+        }
+
+        await notifyHousehold(householdId, userId, message)
+      }
+
+      return NextResponse.json({
+        success: true,
+        item: updated
+      })
+    }
+
+    /**
+     * CLEAR NOTIFICATIONS
+     */
     if (action === 'clearNotifications') {
       await sql`
-        DELETE FROM app_notifications 
+        DELETE FROM app_notifications
         WHERE target_role = ${userId}
       `
+
       return NextResponse.json({ success: true })
     }
   } catch (dbError) {
