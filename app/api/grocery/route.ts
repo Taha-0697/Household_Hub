@@ -99,7 +99,7 @@ export async function POST (request: Request) {
       const insertedItemRows = await sql`
         INSERT INTO grocery_items (name, quantity_needed, unit, status, created_by_user_id, created_by_role, household_id, priority, notes, current_stock)
         VALUES (${name}, ${quantityNeeded}, ${unit}, 'pending', ${userId}, ${userRole}, ${householdId}, ${priority}, ${notes}, ${currentStock})
-        RETURNING id, name, quantity_needed AS "quantityNeeded", unit, status, created_by_role AS "createdBy"
+        RETURNING id, name, quantity_needed AS "quantityNeeded", unit, status, created_by_user_id AS "createdByUserId", created_by_role AS "createdBy", priority, notes, current_stock AS "currentStock"
       `
 
       // -- 2. Find all OTHER members in this same house to send them the alert
