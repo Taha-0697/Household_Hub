@@ -96,7 +96,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
               </label>
               <input 
                 type="text" 
-                placeholder="e.g. taha_afifah_home" 
+                placeholder="e.g. husband_wife_home" 
                 value={householdId}
                 onChange={(e) => setHouseholdId(e.target.value)}
                 className="border p-2.5 rounded-lg bg-white text-sm focus:outline-blue-500 text-black w-full"
