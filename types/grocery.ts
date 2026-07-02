@@ -35,7 +35,11 @@ export interface GroceryItem {
   quantityNeeded: number
   unit: string
   status: 'pending' | 'bought' | 'unavailable'
-  createdBy: string
+  priority?: 'Low' | 'Medium' | 'High'
+  notes?: string
+  currentStock?: number
+  createdByUserId: number
+  createdBy: 'husband' | 'wife'
 }
 
 export interface AppNotification {

@@ -27,25 +27,22 @@ export async function GET (request: Request) {
     }
 
     const householdId = memberRows[0].household_id as number
-
-    // -- Fetch grocery list items assigned to this entire household unit
     const dbItems = await sql`
     SELECT
-    id,
-    name,
-    current_stock AS "currentStock",
-    quantity_needed AS "quantityNeeded",
-    unit,
-    status,
-    priority,
-    notes,
-    created_by_user_id AS "createdByUserId",
-    created_by_role AS "createdByRole"
-  FROM grocery_items
-  WHERE household_id = ${householdId}
-  ORDER BY id DESC
-    `
-
+      id,
+      name,
+      current_stock AS "currentStock",
+      quantity_needed AS "quantityNeeded",
+      unit,
+      status,
+      priority,
+      notes,
+      created_by_user_id AS "createdByUserId",
+      created_by_role AS "createdBy"
+    FROM grocery_items
+    WHERE household_id = ${householdId}
+    ORDER BY id DESC
+  `
     // -- Fetch active unread system alerts targeting this exact user ID
     const dbNotifications = await sql`
       SELECT id, message 
