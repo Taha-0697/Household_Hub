@@ -194,7 +194,7 @@ export default function Home () {
 
       {/* Main Requirement List */}
       <h2 className='text-lg font-bold mb-3 text-gray-800'>
-        🛒 Shared List Rows
+        🛒 Shared List Rows 0023
       </h2>
       <ul className='space-y-3 mb-6'>
         {pending.map(item => (
