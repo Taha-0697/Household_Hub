@@ -6,9 +6,10 @@ import { GroceryItem, AVAILABLE_UNITS, PRIORITY_LEVELS } from '@/types/grocery';
 interface GroceryItemCardProps {
   item: GroceryItem;
   onUpdateStatus: (id: number, fields: Partial<GroceryItem>) => void;
+  number?: number;
 }
 
-export default function GroceryItemCard({ item, onUpdateStatus }: GroceryItemCardProps) {
+export default function GroceryItemCard({ item, onUpdateStatus, number }: GroceryItemCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(item.name);
   const [editUnit, setEditUnit] = useState(item.unit);
@@ -43,7 +44,7 @@ const getPriorityBadge = (p?: 'Low' | 'Medium' | 'High') => {
       <div className="flex justify-between items-start gap-2">
         <div className="flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-bold text-gray-900 text-base">{item.name}</span>
+            <span className="font-bold text-gray-900 text-base">{number ? `${number}. ` : ''}{item.name}</span>
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${getPriorityBadge(priority)}`}>
               {priority}
             </span>

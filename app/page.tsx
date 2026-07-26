@@ -7,7 +7,7 @@ import GroceryForm from '@/components/GroceryForm'
 import GroceryItemCard from '@/components/GroceryItemCard'
 import { AppNotification, AuthUser, GroceryItem } from '@/types/grocery'
 
-export default function Home () {
+export default function Home() {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [items, setItems] = useState<GroceryItem[]>([])
   const [notifications, setNotifications] = useState<AppNotification[]>([])
@@ -197,11 +197,12 @@ export default function Home () {
         🛒 Shared List Rows
       </h2>
       <ul className='space-y-3 mb-6'>
-        {pending.map(item => (
+        {pending.map((item, idx) => (
           <GroceryItemCard
             key={item.id}
             item={item}
             onUpdateStatus={handleUpdateItem}
+            number={idx + 1}
           />
         ))}
 
